@@ -3422,6 +3422,8 @@ function initDeferredLayoutPage() {
       let message = opgInput?.value.trim() && (breakdown > opg || (strict && breakdown !== opg))
         ? `General Training/Meeting, Input Demo INM, Input Demo PM aur FFS ka total (${breakdown}) OPG Training (${opg}) ke equal hona chahiye; usse zyada nahi ho sakta.` : "";
       if (strict && opgInput && !opgInput.value.trim() && breakdown > 0) message = "Please enter OPG Training before allocating the four training targets.";
+      const missing = inputs.filter((input) => !input.value.trim());
+      if (missing.length) message = `Please fill ${missing.map((input) => input.dataset.trainingActivityName === "FFS" ? "FFS Exposure" : input.dataset.trainingActivityName).join(", ")}. Enter 0 for sub-targets with no allocation.`;
       trainingTargetInputs().forEach((input) => input.setCustomValidity(""));
       if (message) opgInput.setCustomValidity(message);
       const warning = shell.querySelector("[data-opg-validation-message]");
@@ -3431,7 +3433,7 @@ function initDeferredLayoutPage() {
       }
       return message;
     };
-    trainingTargetInputs().forEach((input) => input.addEventListener("input", () => validateOpgBreakdown(false)));
+    trainingTargetInputs().forEach((input) => input.addEventListener("input", () => validateOpgBreakdown(true)));
     form?.addEventListener("submit", (event) => {
       const message = validateOpgBreakdown(true);
       if (!message) return;
@@ -3676,9 +3678,12 @@ function initDeferredLayoutPage() {
 
       trainingTargetInputs().forEach((input) => {
         input.disabled = !trainingMode || villageMode;
+        input.required = !input.disabled;
+        if (input.disabled) input.setCustomValidity("");
         if ((!trainingMode || villageMode) && !editTarget.id) input.value = "";
       });
 
+      validateOpgBreakdown(true);
       syncNewFarmerTargetMode();
     };
 

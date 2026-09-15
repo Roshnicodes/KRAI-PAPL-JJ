@@ -177,7 +177,7 @@ module Api
         {
           "cc_jj_work_status" => { heading: "CC and JJ Work Status", path: %i[cc_jj_work_status] },
           "demonstration_method" => { heading: "Demonstration Method", path: %i[demonstration_method] },
-          "total_ics_count" => { heading: "Total ICS Count", path: %i[filter_options ics], count: true },
+          "total_ics_count" => { heading: "Total ICS Count", path: [ :mobile_widget_values, "Total ICS Count" ] },
           "total_registered" => { heading: "Total Registered Jeevika Jankar", path: %i[sections registration total_registered] },
           "final_approved" => { heading: "Final Approved", path: %i[sections registration final_approved] },
           "pending_approval" => { heading: "Pending Approval", path: %i[sections registration pending_approval] },
@@ -200,7 +200,8 @@ module Api
           "opg_training_achievement" => { heading: "OPG Training Achievement", path: [ :mobile_widget_values, "OPG Training Achievement" ] },
           "general_training_meeting" => { heading: "General Training/Meeting", path: [ :mobile_widget_values, "General Training/Meeting" ] },
           "input_demo_inm" => { heading: "Input Demo INM", path: [ :mobile_widget_values, "Input Demo INM" ] },
-          "ffs" => { heading: "FFS", path: [ :mobile_widget_values, "FFS" ] },
+          "ffs_exposure" => { heading: "FFS Exposure", path: [ :mobile_widget_values, "FFS Exposure" ] },
+          "ffs" => { heading: "FFS", path: [ :mobile_widget_values, "FFS Exposure" ] },
           "input_demo_pm" => { heading: "Input Demo PM", path: [ :mobile_widget_values, "Input Demo PM" ] },
           "sausar_required" => { heading: "Sausar Required", path: [ :mobile_widget_values, "Sausar Required" ] },
           "sausar_active" => { heading: "Sausar Active", path: [ :mobile_widget_values, "Sausar Active" ] },
@@ -519,7 +520,7 @@ module Api
         ]
         filters = admin_dashboard_cache_filters
         user_key = current_api_user_payload.slice("id", "user_id", "username", "user_name", "user_type").sort.to_h
-        ["api-v1-admin-dashboard-work-status-v6", suffix, user_key, filters, version_parts].to_json
+        ["api-v1-admin-dashboard-work-status-v8", suffix, user_key, filters, version_parts].to_json
       end
 
       def admin_dashboard_cache_filters
@@ -656,6 +657,11 @@ module Api
           targets.select! { |target| target.vrp_id == selected_vrp_id }
         end
 
+        # Web summary SQL reads the resolved month from controller state, not params.
+        # Without this, mobile activity cards count mappings across every month.
+        web.instance_variable_set(:@dashboard_month_filter_value, selected_month)
+        web.instance_variable_set(:@dashboard_main_activity_filter_value, selected_main_activity)
+        web.instance_variable_set(:@dashboard_fcoc_filter_value, selected_fcoc)
         web.instance_variable_set(:@filtered_vrps, vrps)
         web.instance_variable_set(:@filtered_targets, targets)
         bills = exact_dashboard_bills(web, vrps)
@@ -718,6 +724,7 @@ module Api
         web_group_items = web.send(:dashboard_cards).flat_map { |card| Array(card[:items]) }
         mobile_widget_values = (web_summary_cards + web_demo_cards + web_training_cards + web_group_items)
           .each_with_object({}) { |card, values| values[card[:title].to_s] = card[:value] }
+        mobile_widget_values["OPG Training Achievement"] = web.send(:dashboard_opg_achievement_count)
         @admin_dashboard_api_context = {
           web: web,
           vrps: vrps,
@@ -821,36 +828,8 @@ module Api
         end
       end
 
-      def exact_dashboard_bills(web, vrps)
-        filtered_vrp_ids = vrps.map { |vrp| vrp.id.to_s }
-        filters_active = %i[search activity main_activity sub_activity fcoc fco cluster_incharge ics ics_name month post post_wise_name vrp_id].any? { |key| filter_param(key).present? }
-        scope = ModuleRecord.where(module_slug: "jeevika-jankar-bill-process")
-        if filters_active
-          return [] if filtered_vrp_ids.blank?
-
-          scope = scope.where("data::jsonb ->> 'select_vrp' IN (?)", filtered_vrp_ids)
-        end
-        selected_bill_month = filter_param(:month)
-        if selected_bill_month.present?
-          scope = scope.where("LOWER(BTRIM(data::jsonb ->> 'bill_month')) = ?", selected_bill_month.to_s.strip.downcase)
-        end
-        bills = scope.to_a.select do |record|
-          record.data.present? && (filtered_vrp_ids.include?(record.data["select_vrp"].to_s) || !filters_active)
-        end
-        selected_activity = filter_param(:activity)
-        selected_main_activity = filter_param(:main_activity)
-        selected_sub_activity = filter_param(:sub_activity)
-        if selected_activity.present? || selected_main_activity.present? || selected_sub_activity.present?
-          bills.select! do |record|
-            web.send(:jeevika_bill_detail_rows, record).any? do |item|
-              legacy_matches = selected_activity.blank? || item["main_activity"] == selected_activity || item["activity"] == selected_activity
-              main_matches = selected_main_activity.blank? || web.send(:normalize_dashboard_text, item["main_activity"]) == web.send(:normalize_dashboard_text, selected_main_activity)
-              sub_matches = selected_sub_activity.blank? || web.send(:normalize_dashboard_text, item["activity"]) == web.send(:normalize_dashboard_text, selected_sub_activity)
-              legacy_matches && main_matches && sub_matches
-            end
-          end
-        end
-        bills
+      def exact_dashboard_bills(web, _vrps)
+        web.send(:dashboard_billing_records)
       end
 
       def exact_admin_card_data(web, vrps, targets, all_targets, bills)
@@ -1088,9 +1067,9 @@ module Api
             { id: index + 1, name: row[0], reports_to: row[1], level: row[2], assignment_status: "Mapped" }
           end
         when "bill_approved"
-          bills.select { |bill| web.send(:dashboard_bill_approved?, bill) }.map { |bill| admin_bill_list_row(bill, vrps) }
+          bills.select { |bill| web.send(:dashboard_bill_approved?, bill) }.map { |bill| admin_bill_list_row(bill, web) }
         when "bill_pending"
-          bills.select { |bill| web.send(:dashboard_bill_pending?, bill) }.map { |bill| admin_bill_list_row(bill, vrps) }
+          bills.select { |bill| web.send(:dashboard_bill_pending?, bill) }.map { |bill| admin_bill_list_row(bill, web) }
         when "fco_sausar", "fco_turekela"
           fco_name = list_type.delete_prefix("fco_")
           vrps.select { |vrp| web.send(:normalize_dashboard_text, vrp.fcoc).include?(fco_name) }
@@ -1244,14 +1223,15 @@ module Api
         context[:participation_target_map_rows] = web.send(:training_participation_target_map_rows, targets, month_name: dashboard_list_participation_month)
       end
 
-      def admin_bill_list_row(bill, vrps)
-        vrp = vrps.find { |record| record.id.to_s == bill.data["select_vrp"].to_s }
+      def admin_bill_list_row(bill, web)
+        vrp = web.send(:jeevika_bill_vrp, bill)
+        status = web.send(:jeevika_bill_status_label, bill)
         {
           id: bill.id,
           jeevika_jankar_id: bill.data["select_vrp"],
           name: bill.data["jeevika_jankar_name"].presence || bill.data["vrp_name"].presence || vrp&.name,
-          status: bill.data["status"],
-          assignment_status: bill.data["status"],
+          status: status,
+          assignment_status: status,
           bill_month: bill.data["bill_month"],
           financial_year: bill.data["financial_year"],
           total_payment: number(bill.data["total_payment"].to_f)

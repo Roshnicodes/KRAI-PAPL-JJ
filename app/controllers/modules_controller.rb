@@ -3479,10 +3479,7 @@ class ModulesController < ApplicationController
     approved_vrps = dashboard_approved_vrps(active_vrps).size
     pending_approvals = dashboard_pending_approval_vrps(active_vrps).size
 
-    bill_records = ModuleRecord.where(module_slug: "jeevika-jankar-bill-process")
-    bill_records = bill_records.to_a
-    bill_records = bill_records.select { |record| jeevika_jankar_bill_record_visible?(record) } unless admin_dashboard_user?
-    bill_records = bill_records.select { |record| jeevika_jankar_bill_blocks_duplicate?(record) }
+    bill_records = dashboard_billing_records
     approved_bills = bill_records.count { |r| dashboard_bill_approved?(r) }
     pending_bills = bill_records.count { |r| dashboard_bill_pending?(r) }
     billing_items = [
@@ -4437,6 +4434,14 @@ class ModulesController < ApplicationController
       items: items,
       style: style
     }
+  end
+
+  # Billing cards use active bills visible to this login, independently of target filters.
+  def dashboard_billing_records
+    @dashboard_billing_records ||= ModuleRecord.where(module_slug: "jeevika-jankar-bill-process").to_a.select do |record|
+      jeevika_jankar_bill_blocks_duplicate?(record) &&
+        (admin_dashboard_user? || jeevika_jankar_bill_record_visible?(record))
+    end
   end
 
   def dashboard_bill_approved?(record)

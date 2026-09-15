@@ -22,6 +22,7 @@ See [complete cascading filter contract and React Native code](react-native-dash
 | Section | Filter behavior |
 |---|---|
 | Target/mapping-based boxes | Main activity, sub activity, month, FCO, ICS restrict the target population |
+| Total Mapped Main/Sub Indicators | Distinct mapped names by month, FCO and ICS; these web summary totals ignore main/sub activity selections |
 | Demonstration Method | Targets follow dashboard filters; training entries are counted for the resulting JJs and selected month |
 | CC and JJ Work Status | Month and FCO plus login visibility; activity/sub-activity/ICS do not restrict this report |
 | Participation/weekly sections | Existing section-specific month/FCO/week defaults and parameters also apply |
@@ -78,6 +79,19 @@ The screenshot's open icon should open this list endpoint's records.
 Append selected `sub_activity`, `fco`, and `ics`. Use `/user-dashboard` for office login.
 
 Both web and API call `DemonstrationMethodReport`. The latest code already exposes the updated list columns; no web edit is needed to enable them in the API.
+
+Individual Demonstration Method card endpoints use `/admin-dashboard/widgets/` plus:
+
+| Card | Widget key |
+|---|---|
+| OPG Training Target | `opg_training_target` |
+| General Training/Meeting | `general_training_meeting` |
+| Input Demo INM | `input_demo_inm` |
+| Input Demo PM | `input_demo_pm` |
+| FFS Exposure | `ffs_exposure` (legacy `ffs` also works) |
+
+Each individual card returns its total in `value`. The FFS report column remains `FFS`.
+SQL decimal totals such as `OPG Target` may be JSON strings; parse them as numbers before adding in Android.
 
 Summary widget `value` (also full dashboard `demonstration_method`) is an FCO-wise array with:
 

@@ -25,6 +25,16 @@ Example: `https://krai.ploughmanagro.com/api/v1/admin-dashboard/widgets/total_ic
 
 For cascading mobile dropdowns and React Native integration, see [dashboard auto-filter API](react-native-dashboard-filters-api.md).
 
+### Card values and filters
+
+Read each widget's `value` field. Send the same filters to every card, for example
+`?month=August&fco=Sausar&ics=ICS%20A&main_activity=All`.
+Omitted `month` defaults to the previous calendar month; `month=All` includes all months.
+
+- ICS, village and farmer totals use the web dashboard's AFL population, not the target-mapping dropdown count. Month does not restrict these registration totals.
+- Mapped main/sub indicator cards count distinct names for the selected month, FCO and ICS. Like the web summary cards, these two counts ignore main/sub activity selections.
+- Demonstration Method and CC/JJ widgets return arrays, not a single number. See the [report response keys and filter rules](react-native-dashboard-reports-api.md).
+
 ## Admin filter API
 
 `GET https://krai.ploughmanagro.com/api/v1/admin-dashboard/filters`
@@ -55,7 +65,7 @@ All use `https://krai.ploughmanagro.com/api/v1/admin-dashboard/widgets/` before 
 | OPG Training Achievement | `opg_training_achievement` |
 | General Training/Meeting | `general_training_meeting` |
 | Input Demo INM | `input_demo_inm` |
-| FFS | `ffs` |
+| FFS Exposure | `ffs_exposure` (`ffs` also supported) |
 | Input Demo PM | `input_demo_pm` |
 | Sausar Required / Active / Vacant | `sausar_required` / `sausar_active` / `sausar_vacant` |
 | Turekela Required / Active / Vacant | `turekela_required` / `turekela_active` / `turekela_vacant` |

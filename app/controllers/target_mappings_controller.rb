@@ -307,7 +307,13 @@ class TargetMappingsController < ApplicationController
 
   def training_target_opg_error
     targets = target_mapping_params[:training_targets]
-    return unless targets.respond_to?(:[])
+    return unless training_target_mode? || targets.respond_to?(:[])
+
+    targets ||= {}
+    missing = TRAINING_TARGET_FIELDS.keys.select { |key| targets[key].blank? }
+    if missing.any?
+      return "Please fill #{missing.map { |key| key == 'ffs' ? 'FFS Exposure' : TRAINING_TARGET_FIELDS[key] }.join(', ')}. Enter 0 for sub-targets with no allocation."
+    end
 
     supplied = TRAINING_TARGET_FIELDS.keys.select { |key| targets[key].present? }
     return "Training target values must be non-negative whole numbers." if supplied.any? { |key| integer_plan_value(targets[key]).nil? }

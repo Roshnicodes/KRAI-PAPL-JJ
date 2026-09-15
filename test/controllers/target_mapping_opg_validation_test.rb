@@ -3,10 +3,23 @@ require "test_helper"
 class TargetMappingOpgValidationTest < ActiveSupport::TestCase
   def error_for(training_targets)
     controller = TargetMappingsController.new
+    controller.define_singleton_method(:training_target_mode?) { true }
     controller.define_singleton_method(:target_mapping_params) do
       ActionController::Parameters.new(training_targets: training_targets).permit!
     end
     controller.send(:training_target_opg_error)
+  end
+
+  test "exposure widget uses the existing FFS dashboard value" do
+    catalog = Api::V1::JeevikaJankarDashboardController.new.send(:admin_dashboard_widget_catalog)
+    assert_equal catalog.fetch("ffs")[:path], catalog.fetch("ffs_exposure")[:path]
+    assert_equal "FFS Exposure", catalog.fetch("ffs_exposure")[:heading]
+  end
+
+  test "requires every training field even when supplied values add up" do
+    assert error_for("opg_training" => "20", "week_wise_opg" => "20")
+    assert error_for({})
+    assert error_for(nil)
   end
 
   test "blocks when the four breakdown boxes exceed OPG Training" do
