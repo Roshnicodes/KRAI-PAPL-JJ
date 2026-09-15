@@ -74,6 +74,10 @@ module Api
           return render json: report_widget_response(params[:widget], config, "admin")
         end
 
+        if %w[bill_approved bill_pending].include?(params[:widget]) || params[:widget].match?(/\A(?:sausar|turekela)_(?:required|active|vacant|male|female)\z/)
+          return render json: lower_admin_widget_response(params[:widget], config)
+        end
+
         dashboard = cached_admin_dashboard_summary
         value = config[:path].reduce(dashboard) { |data, key| data.respond_to?(:[]) ? data[key] || data[key.to_s] : nil }
         value = value.size if config[:count]
@@ -198,10 +202,42 @@ module Api
         rows = payload[:rows]
         metric = DEMONSTRATION_WIDGET_METRICS[widget]
         value = metric ? number(rows.sum { |row| row[metric].to_f }) : rows
+        value = MobileDashboardReportCards.cc_jj_rows(rows) if kind == "cc_jj_work_status"
         extra = kind == "cc_jj_work_status" ? { groups: MobileDashboardReportCards.cc_jj_groups(rows) } :
           { cards: MobileDashboardReportCards.demonstration_cards(rows) }
         { success: true, dashboard_type: dashboard_type, widget: widget, heading: config[:heading],
           value: value, filters: payload[:filters], **extra, generated_at: Time.current.iso8601 }
+      end
+
+      def lower_admin_widget_response(widget, config)
+        billing = %w[bill_approved bill_pending].include?(widget)
+        payload = cache_admin_dashboard_payload(billing ? "billing-widgets" : "fco-gender-widgets") do
+          web = mobile_participation_calculator
+          if billing
+            bills = web.send(:dashboard_billing_records)
+            values = {
+              "bill_approved" => bills.count { |bill| web.send(:dashboard_bill_approved?, bill) },
+              "bill_pending" => bills.count { |bill| web.send(:dashboard_bill_pending?, bill) }
+            }
+          else
+            context = prepare_lightweight_admin_dashboard_context
+            web = context[:web]
+            vrps = web.send(:dashboard_vrps)
+            gender_month = params[:month].presence || params[:training_month].presence || "August"
+            items = %w[Sausar Turekela].flat_map do |fco|
+              active = web.send(:dashboard_fco_active_vrp_records, fco, gender_month, vrps)
+              web.send(:dashboard_jj_requirement_items, fco, vrps, context[:targets]) + [
+                { title: "#{fco} Male", value: active.count { |vrp| web.send(:normalize_dashboard_text, vrp.gender) == "male" } },
+                { title: "#{fco} Female", value: active.count { |vrp| web.send(:normalize_dashboard_text, vrp.gender) == "female" } }
+              ]
+            end
+            values = items.to_h { |item| [item[:title], item[:value]] }
+          end
+          { values: values, filters: admin_filter_payload }
+        end
+        key = billing ? widget : config[:path].last
+        { success: true, dashboard_type: "admin", widget: widget, heading: config[:heading],
+          value: payload[:values][key], filters: payload[:filters], generated_at: Time.current.iso8601 }
       end
 
       def vrp_dashboard_widget_catalog
@@ -425,6 +461,8 @@ module Api
           dashboard_type: "admin",
           user: current_api_user_payload,
           **dashboard,
+          cc_jj_work_status_groups: MobileDashboardReportCards.cc_jj_groups(dashboard[:cc_jj_work_status]),
+          demonstration_method_cards: MobileDashboardReportCards.demonstration_cards(dashboard[:demonstration_method]),
           generated_at: Time.current.iso8601
         }, status: :ok
       end
@@ -462,10 +500,6 @@ module Api
         week = params[:week].presence || params[:weekly_target_week]
         week = (1..4).include?(week.to_i) ? week.to_i : nil
         args = { month_name: month, fcoc_name: fco }
-        mapped, mapped_popups = web.send(:farmer_training_mapped_farmer_count_and_popups, **args)
-        red, red_popups, breakdown = web.send(:farmer_training_no_training_count_and_popups, **args)
-        yellow, yellow_popups = web.send(:farmer_training_yellow_farmer_count_and_popups, **args)
-        green, green_popups = web.send(:farmer_training_green_farmer_count_and_popups, **args)
         status = params[:status].to_s.presence || "unique"
         status = { "mapped" => "unique", "pending" => "red", "only_1_training" => "yellow",
           "one_plus_trainings" => "green" }.fetch(status, status)
@@ -473,19 +507,34 @@ module Api
         # Preserve legacy total/training list requests.
         return cached_admin_dashboard_participation_payload unless supported.include?(status)
 
-        rows = status == "summary" ? [] : web.send(:farmer_training_participation_rows_from_sql,
-          status, **args, week_number: week)
-        cards = [
-          { key: "mapped_farmer", title: "Mapped Farmer", status: "unique", value: mapped, popups: mapped_popups },
-          { key: "no_training", title: "Pending", status: "red", value: red, popups: red_popups },
-          { key: "only_1_training", title: "Only 1 Training", status: "yellow", value: yellow, popups: yellow_popups },
-          { key: "one_plus_trainings", title: "1+ Trainings", status: "green", value: green, popups: green_popups }
-        ]
+        shared_filters = admin_dashboard_cache_filters.except("status")
+        summary = cache_admin_dashboard_payload("#{dashboard_type}/participation-cards", filters: shared_filters) do
+          mapped, mapped_popups = web.send(:farmer_training_mapped_farmer_count_and_popups, **args)
+          red, red_popups, breakdown = web.send(:farmer_training_no_training_count_and_popups, **args)
+          yellow, yellow_popups = web.send(:farmer_training_yellow_farmer_count_and_popups, **args)
+          green, green_popups = web.send(:farmer_training_green_farmer_count_and_popups, **args)
+          {
+            cards: [
+              { key: "mapped_farmer", title: "Mapped Farmer", status: "unique", value: mapped, popups: mapped_popups },
+              { key: "no_training", title: "Pending", status: "red", value: red, popups: red_popups },
+              { key: "only_1_training", title: "Only 1 Training", status: "yellow", value: yellow, popups: yellow_popups },
+              { key: "one_plus_trainings", title: "1+ Trainings", status: "green", value: green, popups: green_popups }
+            ],
+            red_fco_details: breakdown,
+            totals: { total_unique_farmers_distinct: mapped, red: red, yellow: yellow, green: green, pending: red }
+          }
+        end
+        rows = if status == "summary"
+          []
+        else
+          cache_admin_dashboard_payload("#{dashboard_type}/participation-rows/#{status}", filters: shared_filters) do
+            web.send(:farmer_training_participation_rows_from_sql, status, **args, week_number: week)
+          end
+        end
         {
           success: true, dashboard_type: dashboard_type, title: "Farmer Training Participation Status",
           status: status, selected_month: month, selected_fcoc: fco, selected_week: week,
-          cards: cards, red_fco_details: breakdown,
-          totals: { total_unique_farmers_distinct: mapped, red: red, yellow: yellow, green: green, pending: red },
+          **summary,
           count: rows.size, farmers: rows, generated_at: Time.current.iso8601
         }
       end
@@ -533,17 +582,20 @@ module Api
         end
       end
 
-      def cache_admin_dashboard_payload(suffix)
-        fill_key = [suffix, current_api_user_payload, admin_dashboard_cache_filters].to_json
-        DashboardCacheFill.synchronize(fill_key) do
-          Rails.cache.fetch(admin_dashboard_cache_key(suffix), expires_in: 10.minutes, race_condition_ttl: 30.seconds) { yield }
+      def cache_admin_dashboard_payload(suffix, filters: admin_dashboard_cache_filters)
+        key = admin_dashboard_cache_key(suffix, filters: filters)
+        cached = Rails.cache.read(key)
+        return cached unless cached.nil?
+
+        DashboardCacheFill.synchronize(key) do
+          Rails.cache.fetch(key, expires_in: 10.minutes, race_condition_ttl: 30.seconds) { yield }
         end
       rescue StandardError => error
         Rails.logger.warn("Admin dashboard cache skipped: #{error.class}: #{error.message}")
         yield
       end
 
-      def admin_dashboard_cache_key(suffix)
+      def admin_dashboard_cache_key(suffix, filters: admin_dashboard_cache_filters)
         version_parts = [
           cache_table_version(TargetMapping),
           cache_table_version(VrpIcsMapping),
@@ -561,9 +613,8 @@ module Api
             add-village
           ])
         ]
-        filters = admin_dashboard_cache_filters
         user_key = current_api_user_payload.slice("id", "user_id", "username", "user_name", "user_type").sort.to_h
-        ["api-v1-admin-dashboard-work-status-v9", suffix, user_key, filters, version_parts].to_json
+        ["api-v1-admin-dashboard-work-status-v10", Date.current.to_s, suffix, user_key, filters, version_parts].to_json
       end
 
       def admin_dashboard_cache_filters

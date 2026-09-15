@@ -94,7 +94,7 @@ class Api::V1::AdminDashboardWidgetValuesTest < ActionDispatch::IntegrationTest
     web.request = ActionDispatch::TestRequest.create
     web.params = ActionController::Parameters.new(@filters)
     web.define_singleton_method(:current_app_user) { { "user_type" => "admin" } }
-    assert_equal CcJjWorkStatusReport.new(calculator: web).summary, widget_value("cc_jj_work_status")
+    assert_equal MobileDashboardReportCards.cc_jj_rows(CcJjWorkStatusReport.new(calculator: web).summary), widget_value("cc_jj_work_status")
     assert_equal %w[Sausar Turekela], response.parsed_body.fetch("groups").map { |group| group.fetch("fco_name") }
   end
 

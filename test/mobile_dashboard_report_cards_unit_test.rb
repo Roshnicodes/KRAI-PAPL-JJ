@@ -9,6 +9,11 @@ class MobileDashboardReportCardsUnitTest < Minitest::Test
       { "fco_id" => "1006", "status" => "Red", "toatl_cc" => 3, "toatl_jj" => 7 },
       { "fco_id" => "1006", "status" => "Completed", "toatl_cc" => 2, "toatl_jj" => 17 }
     ]
+    normalized = MobileDashboardReportCards.cc_jj_rows(rows)
+    assert_equal 4, normalized.first["total_cc"]
+    assert_equal 6, normalized.first["total_jj"]
+    assert_equal 4, normalized.first["toatl_cc"]
+    assert_equal "Sausar", normalized.first["fco_name"]
     groups = MobileDashboardReportCards.cc_jj_groups(rows)
     assert_equal %w[Sausar Turekela], groups.map { |group| group[:fco_name] }
     assert_equal({ cc: 4, jj: 6 }, groups[0][:red])

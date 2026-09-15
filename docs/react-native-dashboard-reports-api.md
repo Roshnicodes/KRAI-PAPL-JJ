@@ -152,7 +152,7 @@ for (const group of body.groups) {
 }
 ```
 
-Each group has `fco_id`, `fco_name`, `red: {cc, jj}` and `completed: {cc, jj}`. The legacy `value` array still uses `toatl_cc` and `toatl_jj`. Reading `total_cc` from that array will give undefined, not the count. Do not replace request failures or unknown fields with zero.
+Each group has `fco_id`, `fco_name`, `red: {cc, jj}` and `completed: {cc, jj}`. The legacy `value` array still uses `toatl_cc` and `toatl_jj`. The API now also supplies correctly spelled `total_cc`/`total_jj` aliases and `fco_name` in each widget row. Older deployments only supply the legacy spellings. Do not replace request failures or unknown fields with zero.
 
 ### Demonstration Method rendering
 
@@ -167,3 +167,13 @@ Latency must be measured on the deployed database with both cold and warm caches
 ### Billing
 
 Admin `widgets/bill_approved` and `widgets/bill_pending`, plus their `lists/` routes, use active visible bills like the web billing cards. Target/month dropdowns do not restrict these billing totals. Deleted/discarded/inactive records are excluded; list status follows the approval workflow.
+
+## Reducing the 65-request dashboard refresh
+
+- For participation cards, call `farmer-training-participation?status=summary` once with the selected filters. This returns all four cards without a farmer list. Request `status=unique`, `red`, `yellow`, or `green` only on View List. `pending` aliases `red`.
+- Participation cards now share a cache across status requests. Farmer lists have their own status caches. Different users, months, and filters remain isolated.
+- FCO requirement, gender and billing widgets now skip the full dashboard calculations. Existing web calculations are reused; web routes/views are unchanged.
+- Do not issue both unfiltered startup requests and filtered requests for the same screen. Wait for selected filters before fetching cards, and cancel obsolete requests.
+- The full admin dashboard now includes `cc_jj_work_status_groups` and `demonstration_method_cards` as additive display fields. Individual report widgets expose `groups` and `cards` respectively.
+
+These changes reduce repeated server work. They do not establish a measured millisecond latency for production or eliminate the time needed to download large farmer lists. Database profiling remains pending.
