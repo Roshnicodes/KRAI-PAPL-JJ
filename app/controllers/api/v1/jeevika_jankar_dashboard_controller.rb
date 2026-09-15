@@ -70,6 +70,10 @@ module Api
         config = admin_dashboard_widget_catalog[params[:widget]]
         return render json: { success: false, message: "Invalid dashboard widget.", available_widgets: admin_dashboard_widget_catalog.keys }, status: :unprocessable_entity unless config
 
+        if report_widget?(params[:widget])
+          return render json: report_widget_response(params[:widget], config, "admin")
+        end
+
         dashboard = cached_admin_dashboard_summary
         value = config[:path].reduce(dashboard) { |data, key| data.respond_to?(:[]) ? data[key] || data[key.to_s] : nil }
         value = value.size if config[:count]
@@ -159,6 +163,45 @@ module Api
           "target_progress" => "Assigned Target Progress List",
           "weekly_target_plan" => "Weekly Target Plan"
         }
+      end
+
+      DEMONSTRATION_WIDGET_METRICS = {
+        "opg_training_target" => "OPG Target", "general_training_meeting" => "General Training/Meeting",
+        "input_demo_inm" => "Input Demo INM", "input_demo_pm" => "Input Demo PM",
+        "ffs" => "FFS", "ffs_exposure" => "FFS"
+      }.freeze
+
+      def report_widget?(widget)
+        %w[cc_jj_work_status demonstration_method].include?(widget) || DEMONSTRATION_WIDGET_METRICS.key?(widget)
+      end
+
+      # All five demonstration cards share one report fill, without building unrelated sections.
+      def report_widget_response(widget, config, dashboard_type)
+        kind = widget == "cc_jj_work_status" ? widget : "demonstration_method"
+        payload = cache_admin_dashboard_payload("#{dashboard_type}/report-widget/#{kind}") do
+          web = mobile_participation_calculator
+          if kind == "cc_jj_work_status"
+            rows = CcJjWorkStatusReport.new(calculator: web).summary
+          else
+            if dashboard_type == "user"
+              _, targets, = filtered_scope(web)
+            else
+              context = prepare_lightweight_admin_dashboard_context
+              targets = context[:targets]
+            end
+            rows = DemonstrationMethodReport.new(targets: targets,
+              month: params.key?(:month) ? filter_param(:month) : Date.current.prev_month.strftime("%B")).summary
+          end
+          { rows: rows, filters: admin_filter_payload.merge(
+            month: params.key?(:month) ? filter_param(:month) : Date.current.prev_month.strftime("%B")) }
+        end
+        rows = payload[:rows]
+        metric = DEMONSTRATION_WIDGET_METRICS[widget]
+        value = metric ? number(rows.sum { |row| row[metric].to_f }) : rows
+        extra = kind == "cc_jj_work_status" ? { groups: MobileDashboardReportCards.cc_jj_groups(rows) } :
+          { cards: MobileDashboardReportCards.demonstration_cards(rows) }
+        { success: true, dashboard_type: dashboard_type, widget: widget, heading: config[:heading],
+          value: value, filters: payload[:filters], **extra, generated_at: Time.current.iso8601 }
       end
 
       def vrp_dashboard_widget_catalog
@@ -520,7 +563,7 @@ module Api
         ]
         filters = admin_dashboard_cache_filters
         user_key = current_api_user_payload.slice("id", "user_id", "username", "user_name", "user_type").sort.to_h
-        ["api-v1-admin-dashboard-work-status-v8", suffix, user_key, filters, version_parts].to_json
+        ["api-v1-admin-dashboard-work-status-v9", suffix, user_key, filters, version_parts].to_json
       end
 
       def admin_dashboard_cache_filters
@@ -972,6 +1015,13 @@ module Api
           vrps.select! { |vrp| web.send(:normalize_dashboard_text, vrp.fcoc) == normalized_fcoc }
           vrp_ids = id_lookup(vrps)
           targets.select! { |target| target.vrp_id.present? && vrp_ids.key?(target.vrp_id.to_s) }
+        end
+
+        selected_cluster = filter_param(:cluster_incharge)
+        if selected_cluster.present?
+          vrps.select! { |vrp| web.send(:cluster_label_matches?, selected_cluster, vrp.cluster_incharge) }
+          vrp_ids = id_lookup(vrps)
+          targets.select! { |target| vrp_ids.key?(target.vrp_id.to_s) }
         end
 
         selected_ics = filter_param(:ics, :ics_name)

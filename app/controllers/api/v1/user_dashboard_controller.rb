@@ -44,6 +44,10 @@ module Api
         config = user_dashboard_widget_catalog[params[:widget]]
         return render json: { success: false, message: "Invalid dashboard widget.", available_widgets: user_dashboard_widget_catalog.keys }, status: :unprocessable_entity unless config
 
+        if report_widget?(params[:widget])
+          return render json: report_widget_response(params[:widget], config, "user")
+        end
+
         dashboard = cached_user_dashboard_response
         value = config[:path].reduce(dashboard) { |data, key| data.respond_to?(:[]) ? data[key] || data[key.to_s] : nil }
         render json: { success: true, dashboard_type: "user", widget: params[:widget], heading: config[:heading], value: value, filters: dashboard[:filters], generated_at: Time.current.iso8601 }
@@ -232,7 +236,7 @@ module Api
             new-user
           ])
         ]
-        filters = request.query_parameters.to_h.sort.to_h
+        filters = admin_dashboard_cache_filters
         user_key = current_api_user_payload.slice("id", "user_id", "username", "user_name", "user_type").sort.to_h
         ["api-v1-user-dashboard-work-status-v6", user_key, filters, version_parts].to_json
       end

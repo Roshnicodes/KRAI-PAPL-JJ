@@ -132,3 +132,38 @@ Widget response: `{ success, dashboard_type, widget, heading, value, filters, ge
 ## Deployment and verification
 
 These URLs already exist in the repository. Shared report changes become available after the running backend uses the updated code; React Native must render the new fields. This handoff does not claim production deployment or measured latency. Web controllers, views, report services and SQL were not edited for this handoff.
+
+## Android screenshot corrections and report performance
+
+Use identical `month`, `main_activity`, `sub_activity`, `fco`, and `ics` values when comparing web and Android. Do not hard-code screenshot totals. The supplied screenshots show different Demonstration Method counts, but do not show their selected filters, so they do not establish which query is wrong.
+
+### CC/JJ rendering
+
+`GET /admin-dashboard/widgets/cc_jj_work_status?month=August&fco=All`
+
+Read `groups` for the web popup layout, not the response object's keys or `filters`:
+
+```javascript
+const body = await response.json();
+if (!body.success) throw new Error(body.message || "Report failed");
+for (const group of body.groups) {
+  renderFco(group.fco_name, group.red.cc, group.red.jj,
+            group.completed.cc, group.completed.jj);
+}
+```
+
+Each group has `fco_id`, `fco_name`, `red: {cc, jj}` and `completed: {cc, jj}`. The legacy `value` array still uses `toatl_cc` and `toatl_jj`. Reading `total_cc` from that array will give undefined, not the count. Do not replace request failures or unknown fields with zero.
+
+### Demonstration Method rendering
+
+`GET /admin-dashboard/widgets/demonstration_method?month=August&main_activity=All&fco=All&ics=All`
+
+Render the five items in `cards`, using `key`, `heading`, and numeric `value`. These totals use the same report as the web. The legacy FCO-wise `value` array is retained. One request supplies all five cards.
+
+CC/JJ and Demonstration Method widgets now calculate only their report, avoiding full participation, weekly, billing and progress calculations. Individual demonstration widgets share one cached report. Office-login `/user-dashboard` supports the two report endpoints and the same `groups`/`cards` additions. Other API routes have not been benchmarked by this change.
+
+Latency must be measured on the deployed database with both cold and warm caches. No millisecond SLA has been verified. Android application source is not in this repository; the client rendering change above must be applied there.
+
+### Billing
+
+Admin `widgets/bill_approved` and `widgets/bill_pending`, plus their `lists/` routes, use active visible bills like the web billing cards. Target/month dropdowns do not restrict these billing totals. Deleted/discarded/inactive records are excluded; list status follows the approval workflow.
