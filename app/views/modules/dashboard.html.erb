@@ -57,7 +57,7 @@
       </div>
     <% end %>
 
-  <% demonstration_method_titles = ["OPG Training Target", "OPG Training Achievement", "General Training/Meeting", "Input Demo INM", "FFS", "Input Demo PM", "Exposure", "FFS Exposure"] %>
+  <% demonstration_method_titles = ["OPG Training Target", "OPG Training Achievement", "Total Target / Done", "General Training/Meeting", "Input Demo INM", "FFS", "Input Demo PM", "Exposure", "FFS Exposure"] %>
     <% all_dashboard_summary_cards = Array(@dashboard_summary_cards) %>
     <% demonstration_method_cards = Array(@demonstration_method_cards).presence || all_dashboard_summary_cards.select { |card| demonstration_method_titles.include?(card[:title].to_s) } %>
     <% dashboard_summary_cards = all_dashboard_summary_cards.reject { |card| demonstration_method_titles.include?(card[:title].to_s) } %>
@@ -437,7 +437,7 @@
     </div>
   <% end %>
 
-  <% demonstration_method_titles = ["OPG Training Target", "OPG Training Achievement", "General Training/Meeting", "Input Demo INM", "FFS", "Input Demo PM", "Exposure", "FFS Exposure"] %>
+  <% demonstration_method_titles = ["OPG Training Target", "OPG Training Achievement", "Total Target / Done", "General Training/Meeting", "Input Demo INM", "FFS", "Input Demo PM", "Exposure", "FFS Exposure"] %>
   <% all_dashboard_summary_cards = Array(@dashboard_summary_cards) %>
   <% demonstration_method_cards = Array(@demonstration_method_cards).presence || all_dashboard_summary_cards.select { |card| demonstration_method_titles.include?(card[:title].to_s) } %>
   <% dashboard_summary_cards = all_dashboard_summary_cards.reject { |card| demonstration_method_titles.include?(card[:title].to_s) } %>
