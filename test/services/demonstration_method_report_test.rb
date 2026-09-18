@@ -15,24 +15,19 @@ class DemonstrationMethodReportTest < ActiveSupport::TestCase
     entry(@second, "FFS", "July")
   end
 
-  test "de-duplicates targets per village and splits method entries into record and farmer counts" do
+  test "de-duplicates targets per village and formats method target done values" do
     report = DemonstrationMethodReport.new(targets: @targets)
     assert_equal 2, report.rows.size
     first = report.rows.find { |row| row["vrp_id"] == @vrp.id }
     # View list OPG target is village-deduped per JJ: both @vrp targets (3 and 4)
     # share village_id "1", so the JJ total is MAX(3, 4) = 4, not the row SUM of 7.
-    assert_equal 4, first["OPG Target"]
-    assert_equal 0, first["Target Farmer Count"]
-    # Each method has one training-form record (Count = 1); the records carry no
-    # selected_farmer_ids, so the distinct-farmer count stays 0.
+    assert_equal "16 / 4", first["OPG Target / Done"]
     ["General Training/Meeting", "Input Demo INM", "Input Demo PM", "FFS"].each do |method|
-      assert_equal 1, first["#{method} Count"]
-      assert_equal 0, first["#{method} Farmer"]
+      assert_equal "4 / 1", first[method]
     end
     zero = report.rows.find { |row| row["vrp_id"] == @second.id }
     ["General Training/Meeting", "Input Demo INM", "Input Demo PM", "FFS"].each do |method|
-      assert_equal 0, zero["#{method} Count"]
-      assert_equal 0, zero["#{method} Farmer"]
+      assert_equal "0 / 0", zero[method]
     end
     assert_equal 1, report.summary.size
     # FCO summary also de-duplicates OPG target per village (MAX per village_id,
@@ -54,11 +49,11 @@ class DemonstrationMethodReportTest < ActiveSupport::TestCase
     report = DemonstrationMethodReport.new(targets: @targets)
     assert_equal 2, report.summary.first["FFS"]
     # The view list now trims created_by_id too, so this padded record is counted
-    # alongside the original FFS record => FFS Count 2.
-    assert_equal 2, report.rows.find { |row| row["vrp_id"] == @vrp.id }["FFS Count"]
+    # alongside the original FFS record => FFS done count 2.
+    assert_equal "4 / 2", report.rows.find { |row| row["vrp_id"] == @vrp.id }["FFS"]
   end
 
-  test "expanded farmer arrays preserve distinct record and farmer counts including empty arrays" do
+  test "view list counts training form records without expanding farmer arrays" do
     shared = { created_by_id: " #{@vrp.id} ", month: " AUGUST ", training_method: " FFS " }
     ModuleRecord.create!(module_slug: "training-form", data: shared.merge(selected_farmer_ids: ["11", "11", "12", nil, ""]))
     ModuleRecord.create!(module_slug: "training-form", data: shared.merge(selected_farmer_ids: ["12", "13"]))
@@ -66,13 +61,10 @@ class DemonstrationMethodReportTest < ActiveSupport::TestCase
     ModuleRecord.create!(module_slug: "training-form", data: shared.merge(created_by_id: "999999", selected_farmer_ids: ["99"]))
     report = DemonstrationMethodReport.new(targets: @targets)
     row = report.rows.find { |item| item["vrp_id"] == @vrp.id }
-    # The original FFS entry and the empty-array entry still count as records;
-    # SQL COUNT(DISTINCT farmer_id) includes an empty string but excludes NULL.
-    assert_equal 4, row["FFS Count"]
-    assert_equal 4, row["FFS Farmer"]
+    # The original FFS entry plus three August FFS records count as four done records.
+    assert_equal "4 / 4", row["FFS"]
     assert_equal 4, report.summary.first["FFS"]
-    assert_equal 4, row["OPG Target"]
-    assert_equal 5, DemonstrationMethodReport.new(targets: @targets, month: "all").rows.find { |item| item["vrp_id"] == @vrp.id }["FFS Count"]
+    assert_equal "4 / 5", DemonstrationMethodReport.new(targets: @targets, month: "all").rows.find { |item| item["vrp_id"] == @vrp.id }["FFS"]
   end
 
   private
@@ -86,7 +78,12 @@ class DemonstrationMethodReportTest < ActiveSupport::TestCase
 
   def target(vrp, amount, month = " August ")
     TargetMapping.create!(vrp: vrp, fco_id: "demo", fco_name: "Demo FCO", ics_id: "1", village_id: "1",
-      month_name: month, main_activity_name: "Training", activity_name: "Demo", target_quantity: 0, opg_training_target: amount)
+      month_name: month, main_activity_name: "Training", activity_name: "Demo", target_quantity: 0,
+      opg_training_target: amount,
+      week_wise_opg_target: amount,
+      input_demo_inm_target: amount,
+      input_demo_pm_target: amount,
+      ffs_target: amount)
   end
 
   def entry(vrp, method, month = " AUGUST ")

@@ -3727,12 +3727,28 @@ class ModulesController < ApplicationController
       month: params.key?(:month) ? dashboard_filter_param(:month) : Date.current.prev_month.strftime("%B"))
     # Display titles only; the underlying metric/data keys ("OPG Target", "FFS") are unchanged.
     demonstration_method_card_titles = { "OPG Target" => "OPG Training Target", "FFS" => "FFS Exposure" }
+    summary_rows = report.summary
     DemonstrationMethodReport::METRICS.map do |metric|
       dashboard_summary_card(demonstration_method_card_titles.fetch(metric, metric),
-        dashboard_quantity(report.summary.sum { |row| row[metric] }), "Training method entries",
+        demonstration_method_metric_value(summary_rows, metric), "Training method entries",
         demonstration_method_list_path(request.query_parameters),
         demonstration_method_list_path(request.query_parameters.merge(format: :xlsx)))
     end
+  end
+
+  def demonstration_method_metric_value(rows, metric)
+    rows = Array(rows)
+    return dashboard_quantity(rows.sum { |row| dashboard_numeric(row["OPG Target"]) }) if metric == "OPG Target"
+    return demonstration_method_target_done_value(rows, "Total Target", "Total Done") if metric == "Total Target / Done"
+
+    demonstration_method_target_done_value(rows, "#{metric} Target", "#{metric} Done", metric)
+  end
+
+  def demonstration_method_target_done_value(rows, target_key, done_key, legacy_done_key = nil)
+    target = rows.sum { |row| dashboard_numeric(row[target_key]) }
+    done = rows.sum { |row| dashboard_numeric(row[done_key].presence || row[legacy_done_key]) }
+
+    "#{dashboard_quantity(target)} / #{dashboard_quantity(done)}"
   end
 
   def dashboard_opg_achievement_count
